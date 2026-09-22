@@ -110,6 +110,8 @@ public:
     void saveJPEG(const std::string& filename, int quality=100) const;
     void savePNG(const char *const filename) const;
     void savePNG(const std::string& filename) const;
+    void saveBMP(const char *const filename) const;
+    void saveBMP(const std::string& filename) const;
 
 protected:
     void        allocateData();

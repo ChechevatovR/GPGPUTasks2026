@@ -113,6 +113,15 @@ void AnyImage::savePNG(const std::string& filename) const {
 	savePNG(filename.c_str());
 }
 
+void AnyImage::saveBMP(const char *const filename) const {
+	if (type() == DataType8u) this->toCImg<unsigned char>().img->save_bmp(filename);
+	else throwUnsupportedDataType(type());
+}
+
+void AnyImage::saveBMP(const std::string& filename) const {
+        saveBMP(filename.c_str());
+}
+
 template <typename T>
 TypedImage<T>::TypedImage() : AnyImage() {
 	type_ = DataTypeTraits<T>::type();

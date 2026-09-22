@@ -4,6 +4,7 @@
 
 #include <stdexcept>
 
+int getOpenMPThreadsCount();
 
 class exception_dispatcher {
 public:

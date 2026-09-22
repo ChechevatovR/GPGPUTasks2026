@@ -46,6 +46,7 @@ set(SOURCES
 set(LIBRARIES
         libclew
         libgpu
+        libimages
         libutils
         libjson
 )
@@ -56,11 +57,19 @@ set(LIBRARIES
 # Затем получивщийся исходник преобразуется в массив байтов в файле src/kernels/cl/generated_kernels/aplusb_nospir_opencl120.h
 # (чтобы не нужно было в runtime читать исходник с диска, чтобы был монолитный исполняемый файл)
 # Обратите внимание что это происходит на этапе компиляции, кроме того эта команда делает так чтобы файл src/kernels/vk/aplusb.h был перечислен среди HEADERS для компиляции при вызове add_executable
-set(OPENCL_SOURCES)
+set(OPENCL_SOURCES
+        src/kernels/cl/aplusb.cl
+        src/kernels/cl/mandelbrot.cl
+        src/kernels/cl/sum_01_atomics.cl
+        src/kernels/cl/sum_02_atomics_load_k.cl
+        src/kernels/cl/sum_03_local_memory_atomic_per_workgroup.cl
+        src/kernels/cl/sum_04_local_reduction.cl)
+
+set(OPENCL_INCLUDES src/kernels/defines.h src/kernels/cl/helpers/rassert.cl)
 set(OPENCL_DEFINES)
-compile_opencl(HEADERS src/kernels/cl/aplusb.cl OPENCL_SOURCES OPENCL_DEFINES)
-compile_opencl(HEADERS src/kernels/cl/aplusb_matrix_bad.cl OPENCL_SOURCES OPENCL_DEFINES)
-compile_opencl(HEADERS src/kernels/cl/aplusb_matrix_good.cl OPENCL_SOURCES OPENCL_DEFINES)
+foreach(CL_FILE IN LISTS OPENCL_SOURCES)
+    compile_opencl(HEADERS ${CL_FILE} OPENCL_INCLUDES OPENCL_DEFINES)
+endforeach()
 
 # compile_vulkan CMake-функция объявлена в libs/gpu/libgpu/vulkan/CMakeLists.txt:97
 # Она считывает все байты из файла src/kernels/vk/aplusb.comp (т.е. весь исходный код кернела), компилирует с помощью glslc компилятора (в т.ч. выполняя все #include)
@@ -69,10 +78,18 @@ compile_opencl(HEADERS src/kernels/cl/aplusb_matrix_good.cl OPENCL_SOURCES OPENC
 # Затем получившийся скомпилированный SPIR байткод преобразует в массив байтов в файле src/kernels/vk/generated_kernels/aplusb_comp_spirv_vulkan.h
 # (чтобы не нужно было в runtime читать шейдер/байткод с диска, чтобы был монолитный исполняемый файл)
 # Обратите внимание что это происходит на этапе компиляции, кроме того эта команда делает так чтобы файл src/kernels/vk/aplusb_comp.h был перечислен среди HEADERS для компиляции при вызове add_executable
+set(VULKAN_SOURCES
+        src/kernels/vk/aplusb.comp
+        src/kernels/vk/mandelbrot.comp
+        src/kernels/vk/sum_01_atomics.comp
+        src/kernels/vk/sum_02_atomics_load_k.comp
+        src/kernels/vk/sum_03_local_memory_atomic_per_workgroup.comp
+        src/kernels/vk/sum_04_local_reduction.comp)
+
 set(VULKAN_DEFINES)
-compile_vulkan(HEADERS src/kernels/vk/aplusb.comp VULKAN_DEFINES)
-compile_vulkan(HEADERS src/kernels/vk/aplusb_matrix_bad.comp VULKAN_DEFINES)
-compile_vulkan(HEADERS src/kernels/vk/aplusb_matrix_good.comp VULKAN_DEFINES)
+foreach(VK_FILE IN LISTS VULKAN_SOURCES)
+    compile_vulkan(HEADERS ${VK_FILE} VULKAN_DEFINES)
+endforeach()
 
 if (GPU_CUDA_SUPPORT)
     enable_language(CUDA)
@@ -83,8 +100,11 @@ if (GPU_CUDA_SUPPORT)
     # 2) второй раз специальным CUDA-компилятором NVCC - для DEVICE-side кода, например функции помеченные специальным модификатором __global__ (кернелы) или __device__ (функции которые можно вызвать на видеокарте, т.е. из кернелов)
     set(CUDA_SOURCES
             src/kernels/cu/aplusb.cu
-            src/kernels/cu/aplusb_matrix_bad.cu
-            src/kernels/cu/aplusb_matrix_good.cu)
+            src/kernels/cu/mandelbrot.cu
+            src/kernels/cu/sum_01_atomics.cu
+            src/kernels/cu/sum_02_atomics_load_k.cu
+            src/kernels/cu/sum_03_local_memory_atomic_per_workgroup.cu
+            src/kernels/cu/sum_04_local_reduction.cu)
 
     add_definitions(-DCUDA_SUPPORT)
     add_library(${PROJECT_NAME}_core STATIC ${SOURCES} ${CUDA_SOURCES} ${HEADERS})
@@ -95,13 +115,16 @@ else ()
     target_link_libraries(${PROJECT_NAME}_core ${LIBRARIES})
 endif ()
 
-add_executable(main_aplusb src/main_aplusb.cpp)
-add_executable(main_aplusb_matrix src/main_aplusb_matrix.cpp)
+add_executable(main_aplusb     src/main_aplusb.cpp)
+add_executable(main_mandelbrot src/main_mandelbrot.cpp)
+add_executable(main_sum        src/main_sum.cpp)
 
-target_link_libraries(main_aplusb ${PROJECT_NAME}_core)
-target_link_libraries(main_aplusb_matrix ${PROJECT_NAME}_core)
+target_link_libraries(main_aplusb     ${PROJECT_NAME}_core)
+target_link_libraries(main_mandelbrot ${PROJECT_NAME}_core)
+target_link_libraries(main_sum        ${PROJECT_NAME}_core)
 
 if (GPU_CUDA_SUPPORT)
-    target_include_directories(main_aplusb PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-    target_include_directories(main_aplusb_matrix PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    target_include_directories(main_aplusb     PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    target_include_directories(main_mandelbrot PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    target_include_directories(main_sum        PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
 endif ()

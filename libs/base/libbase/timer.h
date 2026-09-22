@@ -1,19 +1,32 @@
 #pragma once
 
-#ifdef _WIN32
-#include <time.h>
-#else
-#include <sys/time.h>
-#endif
-
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <cstdint>
+
+#ifdef _WIN32
+  #define NOMINMAX
+  #include <windows.h>     // QueryPerformanceCounter / Frequency
+#else
+  #include <time.h>        // clock_gettime / timespec
+  #include <sys/time.h>    // gettimeofday fallback
+  #ifdef __APPLE__
+    #include <mach/mach_time.h> // mach_absolute_time
+  #endif
+#endif
 
 class timer {
 protected:
 #ifdef _WIN32
-    typedef clock_t timer_type;
+    // Use QPC ticks for high-resolution monotonic timing on Windows
+    typedef long long timer_type;
+#elif defined(__APPLE__)
+    // Use mach_absolute_time ticks (monotonic, high-res) on macOS
+    typedef unsigned long long timer_type;
+#elif defined(CLOCK_MONOTONIC)
+    // Use timespec with CLOCK_MONOTONIC on POSIX
+    typedef struct timespec timer_type;
 #else
     typedef struct timeval timer_type;
 #endif
@@ -21,7 +34,7 @@ protected:
     double counter_;
     timer_type start_;
     int is_running_;
-    
+
     std::vector<double> laps_;
 
 public:
@@ -81,7 +94,7 @@ public:
 
         return tm;
     }
-    
+
     const std::vector<double>& laps() const
     {
         return laps_;
@@ -91,7 +104,7 @@ public:
     double lapAvg() const
     {
         std::vector<double> laps = lapsFiltered();
-        
+
         double sum = 0.0;
         for (int i = 0; i < laps.size(); ++i) {
             sum += laps[i];
@@ -138,24 +151,84 @@ protected:
 
     static timer_type measure()
     {
-        timer_type tm;
 #ifdef _WIN32
-        tm = clock();
+        // QPC is monotonic and high resolution
+        LARGE_INTEGER v;
+        ::QueryPerformanceCounter(&v);
+        return (timer_type)v.QuadPart;
+
+#elif defined(__APPLE__)
+        // mach_absolute_time is monotonic with nanosecond scale via timebase
+        return (timer_type)::mach_absolute_time();
+
+#elif defined(CLOCK_MONOTONIC)
+        // clock_gettime(CLOCK_MONOTONIC) typically uses vDSO (very low overhead)
+        struct timespec ts;
+        ::clock_gettime(CLOCK_MONOTONIC, &ts);
+        return ts;
+
 #else
-        ::gettimeofday(&tm, 0);
+        // Fallback to gettimeofday (wall clock, not monotonic) if nothing else is available
+        struct timeval tv;
+        ::gettimeofday(&tv, 0);
+        return tv;
 #endif
-        return tm;
     }
 
     static double diff(const timer_type &start, const timer_type &end)
     {
 #ifdef _WIN32
-        return (double) (end - start) / (double) CLOCKS_PER_SEC;
-#else
-        long secs = end.tv_sec - start.tv_sec;
-        long usecs = end.tv_usec - start.tv_usec;
+        // Convert QPC ticks to seconds using cached frequency
+        const double inv_freq = qpc_inv_freq();
+        const long long dt = (long long)(end - start);
+        return (double)dt * inv_freq;
 
-        return (double) secs + (double) usecs / 1000000.0;
+#elif defined(__APPLE__)
+        // Convert mach ticks to seconds using cached timebase
+        const mach_timebase_info_data_t& tb = timebase();
+        // Convert ticks -> nanoseconds: ticks * numer/denom
+        const unsigned long long dt = (unsigned long long)(end - start);
+        const long double ns = (long double)dt * (long double)tb.numer / (long double)tb.denom;
+        return (double)(ns * 1e-9L);
+
+#elif defined(CLOCK_MONOTONIC)
+        // timespec difference in seconds (monotonic)
+        long sec  = end.tv_sec  - start.tv_sec;
+        long nsec = end.tv_nsec - start.tv_nsec;
+        if (nsec < 0) { --sec; nsec += 1000000000L; }
+        return (double)sec + (double)nsec * 1e-9;
+
+#else
+        // timeval fallback (microsecond precision, not monotonic)
+        long secs  = end.tv_sec  - start.tv_sec;
+        long usecs = end.tv_usec - start.tv_usec;
+        return (double)secs + (double)usecs / 1000000.0;
 #endif
     }
+
+#ifdef _WIN32
+    // Cache 1/frequency to avoid QueryPerformanceFrequency in hot path
+    static double qpc_inv_freq()
+    {
+        static double inv = []{
+            LARGE_INTEGER f;
+            ::QueryPerformanceFrequency(&f);
+            return 1.0 / (double)f.QuadPart;
+        }();
+        return inv;
+    }
+#endif
+
+#ifdef __APPLE__
+    // Cache timebase to avoid repeated syscalls
+    static const mach_timebase_info_data_t& timebase()
+    {
+        static mach_timebase_info_data_t tb = []{
+            mach_timebase_info_data_t info{};
+            ::mach_timebase_info(&info);
+            return info;
+        }();
+        return tb;
+    }
+#endif
 };

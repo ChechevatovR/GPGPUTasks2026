@@ -8,7 +8,10 @@
 <details><summary>Локальный вывод</summary><p>
 
 <pre>
-$ ./main_aplusb_matrix
+$ ./main_mandelbrot
+...
+
+$ ./main_sum
 ...
 </pre>
 
@@ -23,7 +26,10 @@ $ ./main_aplusb_matrix
 <details><summary>Вывод Github CI</summary><p>
 
 <pre>
-$ ./main_aplusb_matrix
+$ ./main_mandelbrot
+...
+
+$ ./main_sum
 ...
 </pre>
 
