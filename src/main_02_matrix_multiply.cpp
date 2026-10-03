@@ -85,7 +85,9 @@ void run(int argc, char** argv)
 
     // Аллоцируем буферы в VRAM
     gpu::gpu_mem_32f matrix_a_gpu(h * k); // rows=H x cols=K
+    gpu::gpu_mem_32f matrix_at_gpu(h * k); // rows=H x cols=K
     gpu::gpu_mem_32f matrix_b_gpu(k * w); // rows=K x cols=W
+    gpu::gpu_mem_32f matrix_bt_gpu(k * w); // rows=K x cols=W
     gpu::gpu_mem_32f matrix_c_gpu(h * w); // rows=H x cols=W
 
     // Прогружаем входные данные по PCI-E шине: CPU RAM -> GPU VRAM
@@ -145,7 +147,7 @@ void run(int argc, char** argv)
                     } else if (algorithm == "02 using local memory") {
                         cuda::matrix_multiply_via_local_memory(gpu::WorkSize(GROUP_SIZE_S, GROUP_SIZE_S, w, h), matrix_a_gpu, matrix_b_gpu, matrix_c_gpu, w, h, k);
                     } else if (algorithm == "03 using WMMA (Tensor Cores) [+Prestige Points]") {
-                        cuda::matrix_multiply_wmma(gpu::WorkSize(GROUP_SIZE_S, GROUP_SIZE_S, w, h * 2 / 16), matrix_a_gpu, matrix_b_gpu, matrix_c_gpu, w, h, k);
+                        cuda::matrix_multiply_wmma(gpu::WorkSize(GROUP_SIZE_S, GROUP_SIZE_S, w, h * 2 / 16), matrix_a_gpu, matrix_at_gpu, matrix_b_gpu, matrix_bt_gpu, matrix_c_gpu, w, h, k);
                     } else {
                         rassert(false, 652345234321, algorithm, algorithm_index);
                     }
@@ -195,8 +197,8 @@ void run(int argc, char** argv)
                 }
             }
 
-            // print_matrix("result", h, w, 4, 4, results.data());
-            print_matrix("result rel error", h, w, 20, 20, output_c_cpu_e.data());
+            // print_matrix("result", h, w, DEBUG_SIZE, DEBUG_SIZE, results.data());
+            // print_matrix("result rel error", h, w, DEBUG_SIZE, DEBUG_SIZE, output_c_cpu_e.data());
             std::cout << "relative differences with CPU: " << stats::valuesStatsLine(relative_errors) << std::endl;
             float median_relative_error = stats::median(relative_errors);
             float perc99_relative_error = stats::percentile(relative_errors, 99);

@@ -17,6 +17,25 @@ const int WMMA_M = 16;
 const int WMMA_N = 16;
 const int WMMA_K = 8;
 
+__global__ void fp32_to_fp16(float *in, half *out, int n) {
+    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = in[idx];
+    }
+}
+
+__global__ void fp32_to_tf32(
+    const float* a,
+    float* b,
+    unsigned int cnt
+) {
+    const uint idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < cnt) {
+        b[idx] = wmma::__float_to_tf32(a[idx]);
+    } else {
+    }
+}
+
 __global__ void matrix_multiply_wmma(
                        const float* a, // rows=h x cols=k
                        const float* b, // rows=k x cols=w
@@ -26,21 +45,20 @@ __global__ void matrix_multiply_wmma(
                        unsigned int k)
 {
     // Leading dimensions. Packed with no transpositions.
-    int lda = h;
-    int ldb = k;
-    int ldc = h;
+    int lda = k;
+    int ldb = w;
+    int ldc = w;
 
     // Tile using a 2D grid
-    int warpM = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
-    int warpN = (blockIdx.y * blockDim.y + threadIdx.y);
+    int warpN = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
+    int warpM = (blockIdx.y * blockDim.y + threadIdx.y);
  
     // Declare the fragments
-    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, wmma::precision::tf32, wmma::col_major> a_frag;
-    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, wmma::precision::tf32, wmma::col_major> b_frag;
-    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> acc_frag;
+    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, wmma::precision::tf32, wmma::row_major> a_frag;
+    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, wmma::precision::tf32, wmma::row_major> b_frag;
     wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> c_frag;
 
-    wmma::fill_fragment(acc_frag, 0.0f);
+    wmma::fill_fragment(c_frag, 0.0f);
 
     // Loop over k
     for (int i = 0; i < k; i += WMMA_K) {
@@ -53,11 +71,11 @@ __global__ void matrix_multiply_wmma(
         // Bounds checking
         if (aRow < h && aCol < k && bRow < k && bCol < w) {
             // Load the inputs
-            wmma::load_matrix_sync(a_frag, a + aRow + aCol * lda, lda);
-            wmma::load_matrix_sync(b_frag, b + bRow + bCol * ldb, ldb);
+            wmma::load_matrix_sync(a_frag, a + aCol + aRow * lda, lda);
+            wmma::load_matrix_sync(b_frag, b + bCol + bRow * ldb, ldb);
 
             // Perform the matrix multiplication
-            wmma::mma_sync(acc_frag, a_frag, b_frag, acc_frag);
+            wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
 
         }
     }
@@ -67,26 +85,44 @@ __global__ void matrix_multiply_wmma(
     int cCol = warpN * WMMA_N;
 
     if (cRow < h && cCol < w) {
-        wmma::load_matrix_sync(c_frag, c + cRow + cCol * ldc, ldc, wmma::mem_col_major);
-
-#pragma unroll
-        for(int i=0; i < c_frag.num_elements; i++) {
-            c_frag.x[i] = acc_frag.x[i] + c_frag.x[i];
-        }
-
         // Store the output
-        wmma::store_matrix_sync(c + cRow + cCol * ldc, c_frag, ldc, wmma::mem_col_major);
+        wmma::store_matrix_sync(c + cCol + cRow * ldc, c_frag, ldc, wmma::mem_row_major);
     }
 }
 
 namespace cuda {
-void matrix_multiply_wmma(const gpu::WorkSize &workSize,
-            const gpu::gpu_mem_32f &a, const gpu::gpu_mem_32f &b, gpu::gpu_mem_32f &c, unsigned int w, unsigned int h, unsigned int k)
-{
+void matrix_multiply_wmma(
+            const gpu::WorkSize &workSize,
+            const gpu::gpu_mem_32f &a,
+            const gpu::gpu_mem_32f &at,
+            const gpu::gpu_mem_32f &b,
+            const gpu::gpu_mem_32f &bt,
+            gpu::gpu_mem_32f &c,
+            unsigned int w,
+            unsigned int h,
+            unsigned int k
+) {
     gpu::Context context;
     rassert(context.type() == gpu::Context::TypeCUDA, 34523543124312, context.type());
     cudaStream_t stream = context.cudaStream();
-    ::matrix_multiply_wmma<<<workSize.cuGridSize(), workSize.cuBlockSize(), 0, stream>>>(a.cuptr(), b.cuptr(), c.cuptr(), w, h, k);
+    auto work_size_at = WorkSize(GROUP_SIZE, h * k);
+    auto work_size_bt = WorkSize(GROUP_SIZE, k * w);
+    ::fp32_to_tf32<<<work_size_at.cuGridSize(), work_size_at.cuBlockSize(), 0, stream>>>(a.cuptr(), at.cuptr(), h * k);
+    CUDA_CHECK_KERNEL(stream);
+    ::fp32_to_tf32<<<work_size_bt.cuGridSize(), work_size_bt.cuBlockSize(), 0, stream>>>(b.cuptr(), bt.cuptr(), k * w);
+    CUDA_CHECK_KERNEL(stream);
+
+    dim3 gridDim;
+    dim3 blockDim;
+
+    // blockDim.x must be a multple of warpSize
+    // 128x4 means we have 16 warps and a block computes a 64x64 output tile
+    blockDim.x = 128;
+    blockDim.y = 4;
+
+    gridDim.x = (w + (WMMA_M * blockDim.x / 32 - 1)) / (WMMA_M * blockDim.x / 32);
+    gridDim.y = (h + WMMA_N * blockDim.y - 1) / (WMMA_N * blockDim.y);
+    ::matrix_multiply_wmma<<<gridDim, blockDim, 0, stream>>>(at.cuptr(), bt.cuptr(), c.cuptr(), w, h, k);
     CUDA_CHECK_KERNEL(stream);
 }
 } // namespace cuda

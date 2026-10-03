@@ -7,6 +7,11 @@ set(CMAKE_CXX_STANDARD 17)
 # Если вы установили CUDA SDK - можете включить поддержку CUDA
 option(GPU_CUDA_SUPPORT "CUDA support." OFF)
 
+# tf32 не компилируется вообще без 80, даже с CUDA_SUPPORT = OFF
+# Попробуем включить 80, но с OFF и надеяться что CI не сломается
+set(CMAKE_CUDA_ARCHITECTURES 80)
+set(CMAKE_CUDA_FLAGS "-lineinfo --fmad=false")
+
 # GLSLC_BIN используйтся для компиляции Vulkan шейдеров (GLSL)
 if (NOT DEFINED GLSLC_BIN)
     # В случае Linux глобальный glslc будет использован (вы его установили среди прочего в scripts/linux/install_vulkan_sdk.sh)
