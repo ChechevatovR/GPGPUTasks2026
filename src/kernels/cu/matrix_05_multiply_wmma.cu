@@ -12,6 +12,11 @@
 #include <mma.h>
 using namespace nvcuda;
 
+// The only dimensions currently supported by WMMA
+const int WMMA_M = 16;
+const int WMMA_N = 16;
+const int WMMA_K = 8;
+
 __global__ void matrix_multiply_wmma(
                        const float* a, // rows=h x cols=k
                        const float* b, // rows=k x cols=w
@@ -20,7 +25,58 @@ __global__ void matrix_multiply_wmma(
                        unsigned int h,
                        unsigned int k)
 {
-    // TODO 020 Это добровольное задание за супер-пупер-баллы престижа сверх нормы
+    // Leading dimensions. Packed with no transpositions.
+    int lda = h;
+    int ldb = k;
+    int ldc = h;
+
+    // Tile using a 2D grid
+    int warpM = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
+    int warpN = (blockIdx.y * blockDim.y + threadIdx.y);
+ 
+    // Declare the fragments
+    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, wmma::precision::tf32, wmma::col_major> a_frag;
+    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, wmma::precision::tf32, wmma::col_major> b_frag;
+    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> acc_frag;
+    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> c_frag;
+
+    wmma::fill_fragment(acc_frag, 0.0f);
+
+    // Loop over k
+    for (int i = 0; i < k; i += WMMA_K) {
+        int aRow = warpM * WMMA_M;
+        int aCol = i;
+
+        int bRow = i;
+        int bCol = warpN * WMMA_N;
+
+        // Bounds checking
+        if (aRow < h && aCol < k && bRow < k && bCol < w) {
+            // Load the inputs
+            wmma::load_matrix_sync(a_frag, a + aRow + aCol * lda, lda);
+            wmma::load_matrix_sync(b_frag, b + bRow + bCol * ldb, ldb);
+
+            // Perform the matrix multiplication
+            wmma::mma_sync(acc_frag, a_frag, b_frag, acc_frag);
+
+        }
+    }
+
+    // Load in the current value of c, scale it by beta, and add this our result scaled by alpha
+    int cRow = warpM * WMMA_M;
+    int cCol = warpN * WMMA_N;
+
+    if (cRow < h && cCol < w) {
+        wmma::load_matrix_sync(c_frag, c + cRow + cCol * ldc, ldc, wmma::mem_col_major);
+
+#pragma unroll
+        for(int i=0; i < c_frag.num_elements; i++) {
+            c_frag.x[i] = acc_frag.x[i] + c_frag.x[i];
+        }
+
+        // Store the output
+        wmma::store_matrix_sync(c + cRow + cCol * ldc, c_frag, ldc, wmma::mem_col_major);
+    }
 }
 
 namespace cuda {
