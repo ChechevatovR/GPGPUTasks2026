@@ -24,18 +24,6 @@ __global__ void fp32_to_fp16(float *in, half *out, int n) {
     }
 }
 
-__global__ void fp32_to_tf32(
-    const float* a,
-    float* b,
-    unsigned int cnt
-) {
-    const uint idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < cnt) {
-        b[idx] = wmma::__float_to_tf32(a[idx]);
-    } else {
-    }
-}
-
 __global__ void matrix_multiply_wmma(
                        const half* a, // rows=h x cols=k
                        const half* b, // rows=k x cols=w
