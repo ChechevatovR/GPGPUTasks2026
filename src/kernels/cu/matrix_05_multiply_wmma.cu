@@ -15,7 +15,7 @@ using namespace nvcuda;
 // The only dimensions currently supported by WMMA
 const int WMMA_M = 16;
 const int WMMA_N = 16;
-const int WMMA_K = 8;
+const int WMMA_K = 16;
 
 __global__ void fp32_to_fp16(float *in, half *out, int n) {
     int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -37,8 +37,8 @@ __global__ void fp32_to_tf32(
 }
 
 __global__ void matrix_multiply_wmma(
-                       const float* a, // rows=h x cols=k
-                       const float* b, // rows=k x cols=w
+                       const half* a, // rows=h x cols=k
+                       const half* b, // rows=k x cols=w
                              float* c, // rows=h x cols=w
                        unsigned int w,
                        unsigned int h,
@@ -54,8 +54,8 @@ __global__ void matrix_multiply_wmma(
     int warpM = (blockIdx.y * blockDim.y + threadIdx.y);
  
     // Declare the fragments
-    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, wmma::precision::tf32, wmma::row_major> a_frag;
-    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, wmma::precision::tf32, wmma::row_major> b_frag;
+    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> a_frag;
+    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> b_frag;
     wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> c_frag;
 
     wmma::fill_fragment(c_frag, 0.0f);
@@ -94,9 +94,9 @@ namespace cuda {
 void matrix_multiply_wmma(
             const gpu::WorkSize &workSize,
             const gpu::gpu_mem_32f &a,
-            const gpu::gpu_mem_32f &at,
+            const gpu::gpu_mem_16f &at,
             const gpu::gpu_mem_32f &b,
-            const gpu::gpu_mem_32f &bt,
+            const gpu::gpu_mem_16f &bt,
             gpu::gpu_mem_32f &c,
             unsigned int w,
             unsigned int h,
@@ -107,9 +107,9 @@ void matrix_multiply_wmma(
     cudaStream_t stream = context.cudaStream();
     auto work_size_at = WorkSize(GROUP_SIZE, h * k);
     auto work_size_bt = WorkSize(GROUP_SIZE, k * w);
-    ::fp32_to_tf32<<<work_size_at.cuGridSize(), work_size_at.cuBlockSize(), 0, stream>>>(a.cuptr(), at.cuptr(), h * k);
+    ::fp32_to_fp16<<<work_size_at.cuGridSize(), work_size_at.cuBlockSize(), 0, stream>>>(a.cuptr(), at.cuptr(), h * k);
     CUDA_CHECK_KERNEL(stream);
-    ::fp32_to_tf32<<<work_size_bt.cuGridSize(), work_size_bt.cuBlockSize(), 0, stream>>>(b.cuptr(), bt.cuptr(), k * w);
+    ::fp32_to_fp16<<<work_size_bt.cuGridSize(), work_size_bt.cuBlockSize(), 0, stream>>>(b.cuptr(), bt.cuptr(), k * w);
     CUDA_CHECK_KERNEL(stream);
 
     dim3 gridDim;

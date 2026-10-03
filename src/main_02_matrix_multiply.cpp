@@ -85,9 +85,9 @@ void run(int argc, char** argv)
 
     // Аллоцируем буферы в VRAM
     gpu::gpu_mem_32f matrix_a_gpu(h * k); // rows=H x cols=K
-    gpu::gpu_mem_32f matrix_at_gpu(h * k); // rows=H x cols=K
+    gpu::gpu_mem_16f matrix_at_gpu(h * k); // rows=H x cols=K
     gpu::gpu_mem_32f matrix_b_gpu(k * w); // rows=K x cols=W
-    gpu::gpu_mem_32f matrix_bt_gpu(k * w); // rows=K x cols=W
+    gpu::gpu_mem_16f matrix_bt_gpu(k * w); // rows=K x cols=W
     gpu::gpu_mem_32f matrix_c_gpu(h * w); // rows=H x cols=W
 
     // Прогружаем входные данные по PCI-E шине: CPU RAM -> GPU VRAM
