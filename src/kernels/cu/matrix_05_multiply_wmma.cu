@@ -25,9 +25,9 @@ const int WG_SIZE_X = WG_SIZE_WARPS_X * WARP_SIZE_X;
 const int WG_SIZE_Y = WG_SIZE_WARPS_Y * WARP_SIZE_Y;
 const int TILE_H = WMMA_N * WG_SIZE_WARPS_Y;
 const int TILE_W = WMMA_M * WG_SIZE_WARPS_X;
-const int MUL = 1; // DO NOT CHANGE EVERYTHING WILL BREAK
+const int MUL = 4;
 const int PAD = 8;
-const int LDA = 32 + PAD;
+const int LDA = (32 * MUL) + PAD;
 const int LDB = 64 + PAD;
 
 __device__ uint idx3(uint y, uint x, uint h, uint w) {
@@ -50,7 +50,7 @@ __global__ void matrix_multiply_wmma(
                        unsigned int k)
 {
     __shared__ half a_small[64][LDA];
-    __shared__ half b_small[32][LDB];
+    __shared__ half b_small[(32 * MUL)][LDB];
 
     // Leading dimensions. Packed with no transpositions.
     const uint ldc = w;
@@ -83,35 +83,47 @@ __global__ void matrix_multiply_wmma(
 
     wmma::fill_fragment(c_frag, 0.0f);
 
-    for (uint i = 0; i < k; i += 32) {
-        // Грузим А-шку в smem
-        // У нас 16 варпов и 64 строки по 32 к загрузке
-        // Каждому достается 4
-        a_small[warp_id * 4 + 0][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 0, i + thread_id, h, k)];
-        a_small[warp_id * 4 + 1][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 1, i + thread_id, h, k)];
-        a_small[warp_id * 4 + 2][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 2, i + thread_id, h, k)];
-        a_small[warp_id * 4 + 3][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 3, i + thread_id, h, k)];
+    for (uint i = 0; i < k; i += 32 * MUL) {
 
-        // Грузим B-шку в smem
-        if (warp_id < 8) {
-            b_small[(warp_id - 0) * 4 + 0][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 0, c_wg_x +  0 + thread_id, k, w)];
-            b_small[(warp_id - 0) * 4 + 1][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 1, c_wg_x +  0 + thread_id, k, w)];
-            b_small[(warp_id - 0) * 4 + 2][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 2, c_wg_x +  0 + thread_id, k, w)];
-            b_small[(warp_id - 0) * 4 + 3][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 3, c_wg_x +  0 + thread_id, k, w)];
-        } else {
-            b_small[(warp_id - 8) * 4 + 0][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 0, c_wg_x + 32 + thread_id, k, w)];
-            b_small[(warp_id - 8) * 4 + 1][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 1, c_wg_x + 32 + thread_id, k, w)];
-            b_small[(warp_id - 8) * 4 + 2][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 2, c_wg_x + 32 + thread_id, k, w)];
-            b_small[(warp_id - 8) * 4 + 3][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 3, c_wg_x + 32 + thread_id, k, w)];
+        for (int j = 0; j < MUL; j++) {
+            const uint shift = 32 * j;
+            const uint a_wg_y = c_wg_y;
+            const uint a_wg_x = i + shift;
+            const uint b_wg_y = i + shift;
+            const uint b_wg_x = c_wg_x;
+
+            // Грузим А-шку в smem
+            // У нас 16 варпов и 64 строки по 32 к загрузке
+            // Каждому достается 4
+            curassert(shift + thread_id < 32 * MUL, 69242293);
+            a_small[warp_id * 4 + 0][shift + thread_id] = a[idx3(a_wg_y + warp_id * 4 + 0, a_wg_x + thread_id, h, k)];
+            a_small[warp_id * 4 + 1][shift + thread_id] = a[idx3(a_wg_y + warp_id * 4 + 1, a_wg_x + thread_id, h, k)];
+            a_small[warp_id * 4 + 2][shift + thread_id] = a[idx3(a_wg_y + warp_id * 4 + 2, a_wg_x + thread_id, h, k)];
+            a_small[warp_id * 4 + 3][shift + thread_id] = a[idx3(a_wg_y + warp_id * 4 + 3, a_wg_x + thread_id, h, k)];
+
+            // Грузим B-шку в smem
+            if (warp_id < 8) {
+                curassert(shift + (warp_id - 0) * 4 + 3 < 32 * MUL, 54398895);
+                b_small[shift + (warp_id - 0) * 4 + 0][ 0 + thread_id] = b[idx3(b_wg_y + (warp_id - 0) * 4 + 0, b_wg_x +  0 + thread_id, k, w)];
+                b_small[shift + (warp_id - 0) * 4 + 1][ 0 + thread_id] = b[idx3(b_wg_y + (warp_id - 0) * 4 + 1, b_wg_x +  0 + thread_id, k, w)];
+                b_small[shift + (warp_id - 0) * 4 + 2][ 0 + thread_id] = b[idx3(b_wg_y + (warp_id - 0) * 4 + 2, b_wg_x +  0 + thread_id, k, w)];
+                b_small[shift + (warp_id - 0) * 4 + 3][ 0 + thread_id] = b[idx3(b_wg_y + (warp_id - 0) * 4 + 3, b_wg_x +  0 + thread_id, k, w)];
+            } else {
+                curassert(shift + (warp_id - 8) * 4 + 3 < 32 * MUL, 87641059);
+                b_small[shift + (warp_id - 8) * 4 + 0][32 + thread_id] = b[idx3(b_wg_y + (warp_id - 8) * 4 + 0, b_wg_x + 32 + thread_id, k, w)];
+                b_small[shift + (warp_id - 8) * 4 + 1][32 + thread_id] = b[idx3(b_wg_y + (warp_id - 8) * 4 + 1, b_wg_x + 32 + thread_id, k, w)];
+                b_small[shift + (warp_id - 8) * 4 + 2][32 + thread_id] = b[idx3(b_wg_y + (warp_id - 8) * 4 + 2, b_wg_x + 32 + thread_id, k, w)];
+                b_small[shift + (warp_id - 8) * 4 + 3][32 + thread_id] = b[idx3(b_wg_y + (warp_id - 8) * 4 + 3, b_wg_x + 32 + thread_id, k, w)];
+            }
         }
 
         __syncthreads();
-        for (uint j = 0; j < 2; j++) {
+        for (uint j = 0; j < 2 * MUL; j++) {
             // Грузим А-шку в фрагмент
             wmma::load_matrix_sync(a_frag, &a_small[warp_id_y * 16][16 * j], LDA);
 
             // Грузим B-шку в фрагмент
-            wmma::load_matrix_sync(b_frag, &b_small[16 * j][16 * warp_id_x], LDB); // 16x16 at (t, warp_x*16)
+            wmma::load_matrix_sync(b_frag, &b_small[16 * j][16 * warp_id_x], LDB);
 
 
             wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);

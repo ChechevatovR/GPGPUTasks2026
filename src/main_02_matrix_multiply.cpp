@@ -148,8 +148,6 @@ void run(int argc, char** argv)
                         cuda::matrix_multiply_via_local_memory(gpu::WorkSize(GROUP_SIZE_S, GROUP_SIZE_S, w, h), matrix_a_gpu, matrix_b_gpu, matrix_c_gpu, w, h, k);
                     } else if (algorithm == "03 using WMMA (Tensor Cores) [+Prestige Points]") {
                         cuda::matrix_multiply_wmma(gpu::WorkSize(GROUP_SIZE_S, GROUP_SIZE_S, w, h * 2 / 16), matrix_a_gpu, matrix_at_gpu, matrix_b_gpu, matrix_bt_gpu, matrix_c_gpu, w, h, k);
-                    } else if (algorithm == "04 using WMMA (Tensor Cores) [+Prestige Points]") {
-                        cuda::matrix_multiply_wmma2(gpu::WorkSize(GROUP_SIZE_S, GROUP_SIZE_S, w, h * 2 / 16), matrix_a_gpu, matrix_at_gpu, matrix_b_gpu, matrix_bt_gpu, matrix_c_gpu, w, h, k);
                     } else {
                         rassert(false, 652345234321, algorithm, algorithm_index);
                     }
@@ -199,8 +197,8 @@ void run(int argc, char** argv)
                 }
             }
 
-            // print_matrix("result", h, w, DEBUG_SIZE, DEBUG_SIZE, results.data());
-            // print_matrix("result rel error", h, w, DEBUG_SIZE, DEBUG_SIZE, output_c_cpu_e.data());
+            print_matrix("result", h, w, DEBUG_SIZE, DEBUG_SIZE, results.data());
+            print_matrix("result rel error", h, w, DEBUG_SIZE, DEBUG_SIZE, output_c_cpu_e.data());
             std::cout << "relative differences with CPU: " << stats::valuesStatsLine(relative_errors) << std::endl;
             float median_relative_error = stats::median(relative_errors);
             float perc99_relative_error = stats::percentile(relative_errors, 99);

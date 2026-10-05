@@ -105,7 +105,6 @@ if (GPU_CUDA_SUPPORT)
             src/kernels/cu/matrix_03_multiply_naive.cu
             src/kernels/cu/matrix_04_multiply_via_local_memory.cu
             src/kernels/cu/matrix_05_multiply_wmma.cu
-            src/kernels/cu/matrix_06_multiply_wmma.cu
     )
 
     add_definitions(-DCUDA_SUPPORT)
