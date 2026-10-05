@@ -17,8 +17,8 @@ const int WMMA_M = 16;
 const int WMMA_N = 16;
 const int WMMA_K = 16;
 
-__global__ void fp32_to_fp16(float *in, half *out, int n) {
-    int idx = blockDim.x * blockIdx.x + threadIdx.x;
+__global__ void fp32_to_fp16(float *in, half *out, uint n) {
+    uint idx = blockDim.x * blockIdx.x + threadIdx.x;
     if (idx < n) {
         out[idx] = in[idx];
     }
@@ -33,13 +33,13 @@ __global__ void matrix_multiply_wmma(
                        unsigned int k)
 {
     // Leading dimensions. Packed with no transpositions.
-    int lda = k;
-    int ldb = w;
-    int ldc = w;
+    const uint lda = k;
+    const uint ldb = w;
+    const uint ldc = w;
 
     // Tile using a 2D grid
-    int warpN = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
-    int warpM = (blockIdx.y * blockDim.y + threadIdx.y);
+    const uint warp_x = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
+    const uint warp_y = (blockIdx.y * blockDim.y + threadIdx.y);
  
     // Declare the fragments
     wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> a_frag;
@@ -49,18 +49,18 @@ __global__ void matrix_multiply_wmma(
     wmma::fill_fragment(c_frag, 0.0f);
 
     // Loop over k
-    for (int i = 0; i < k; i += WMMA_K) {
-        int aRow = warpM * WMMA_M;
-        int aCol = i;
+    for (uint i = 0; i < k; i += WMMA_K) {
+        const uint a_y = warp_y * WMMA_M;
+        const uint a_x = i;
 
-        int bRow = i;
-        int bCol = warpN * WMMA_N;
+        const uint b_y = i;
+        const uint b_x = warp_x * WMMA_N;
 
         // Bounds checking
-        if (aRow < h && aCol < k && bRow < k && bCol < w) {
+        if (a_y < h && a_x < k && b_y < k && b_x < w) {
             // Load the inputs
-            wmma::load_matrix_sync(a_frag, a + aCol + aRow * lda, lda);
-            wmma::load_matrix_sync(b_frag, b + bCol + bRow * ldb, ldb);
+            wmma::load_matrix_sync(a_frag, a + a_x + a_y * lda, lda);
+            wmma::load_matrix_sync(b_frag, b + b_x + b_y * ldb, ldb);
 
             // Perform the matrix multiplication
             wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
@@ -69,8 +69,8 @@ __global__ void matrix_multiply_wmma(
     }
 
     // Load in the current value of c, scale it by beta, and add this our result scaled by alpha
-    int cRow = warpM * WMMA_M;
-    int cCol = warpN * WMMA_N;
+    const uint cRow = warp_y * WMMA_M;
+    const uint cCol = warp_x * WMMA_N;
 
     if (cRow < h && cCol < w) {
         // Store the output
