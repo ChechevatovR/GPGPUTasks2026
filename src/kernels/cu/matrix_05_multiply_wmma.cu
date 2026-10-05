@@ -17,6 +17,23 @@ const int WMMA_M = 16;
 const int WMMA_N = 16;
 const int WMMA_K = 16;
 
+const int WARP_SIZE_X = 32;
+const int WARP_SIZE_Y = 1;
+const int WG_SIZE_WARPS_X = 4;
+const int WG_SIZE_WARPS_Y = 4;
+const int WG_SIZE_X = WG_SIZE_WARPS_X * WARP_SIZE_X;
+const int WG_SIZE_Y = WG_SIZE_WARPS_Y * WARP_SIZE_Y;
+const int TILE_H = WMMA_N * WG_SIZE_WARPS_Y;
+const int TILE_W = WMMA_M * WG_SIZE_WARPS_X;
+const int MUL = 1; // DO NOT CHANGE EVERYTHING WILL BREAK
+const int PAD = 8;
+const int LDA = 32 + PAD;
+const int LDB = 64 + PAD;
+
+__device__ uint idx3(uint y, uint x, uint h, uint w) {
+    return y * w + x;
+}
+
 __global__ void fp32_to_fp16(float *in, half *out, uint n) {
     uint idx = blockDim.x * blockIdx.x + threadIdx.x;
     if (idx < n) {
@@ -32,15 +49,33 @@ __global__ void matrix_multiply_wmma(
                        unsigned int h,
                        unsigned int k)
 {
+    __shared__ half a_small[64][LDA];
+    __shared__ half b_small[32][LDB];
+
     // Leading dimensions. Packed with no transpositions.
-    const uint lda = k;
-    const uint ldb = w;
     const uint ldc = w;
 
     // Tile using a 2D grid
-    const uint warp_x = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
-    const uint warp_y = (blockIdx.y * blockDim.y + threadIdx.y);
- 
+    const uint warp_x = (blockIdx.x * blockDim.x + threadIdx.x) / WARP_SIZE_X;
+    const uint warp_y = (blockIdx.y * blockDim.y + threadIdx.y) / WARP_SIZE_Y;
+    const uint wg_x = blockIdx.x;
+    const uint wg_y = blockIdx.y;
+
+    const uint warp_id_x = threadIdx.x / WARP_SIZE_X;
+    const uint warp_id_y = threadIdx.y / WARP_SIZE_Y;
+    const uint warp_id = warp_id_y * WG_SIZE_WARPS_X + warp_id_x; // Номер варпа в воркгруппе
+    const uint thread_id = threadIdx.x % WARP_SIZE_X; // Номер треда в варпе
+
+    curassert(warp_id_x < 4, 64368844);
+    curassert(warp_id_y < 4, 54398895);
+    curassert(warp_id < 16,  80657575);
+    curassert(thread_id < 32, 74339188);
+
+    const uint c_warp_y = warp_y * WMMA_N; // Базовый адрес C-шки для варпа
+    const uint c_warp_x = warp_x * WMMA_M;
+    const uint c_wg_y = wg_y * TILE_H;     // Базовый адрес C-шки для воркгруппы
+    const uint c_wg_x = wg_x * TILE_W;
+
     // Declare the fragments
     wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> a_frag;
     wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> b_frag;
@@ -48,34 +83,44 @@ __global__ void matrix_multiply_wmma(
 
     wmma::fill_fragment(c_frag, 0.0f);
 
-    // Loop over k
-    for (uint i = 0; i < k; i += WMMA_K) {
-        const uint a_y = warp_y * WMMA_M;
-        const uint a_x = i;
+    for (uint i = 0; i < k; i += 32) {
+        // Грузим А-шку в smem
+        // У нас 16 варпов и 64 строки по 32 к загрузке
+        // Каждому достается 4
+        a_small[warp_id * 4 + 0][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 0, i + thread_id, h, k)];
+        a_small[warp_id * 4 + 1][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 1, i + thread_id, h, k)];
+        a_small[warp_id * 4 + 2][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 2, i + thread_id, h, k)];
+        a_small[warp_id * 4 + 3][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 3, i + thread_id, h, k)];
 
-        const uint b_y = i;
-        const uint b_x = warp_x * WMMA_N;
-
-        // Bounds checking
-        if (a_y < h && a_x < k && b_y < k && b_x < w) {
-            // Load the inputs
-            wmma::load_matrix_sync(a_frag, a + a_x + a_y * lda, lda);
-            wmma::load_matrix_sync(b_frag, b + b_x + b_y * ldb, ldb);
-
-            // Perform the matrix multiplication
-            wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
-
+        // Грузим B-шку в smem
+        if (warp_id < 8) {
+            b_small[(warp_id - 0) * 4 + 0][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 0, c_wg_x +  0 + thread_id, k, w)];
+            b_small[(warp_id - 0) * 4 + 1][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 1, c_wg_x +  0 + thread_id, k, w)];
+            b_small[(warp_id - 0) * 4 + 2][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 2, c_wg_x +  0 + thread_id, k, w)];
+            b_small[(warp_id - 0) * 4 + 3][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 3, c_wg_x +  0 + thread_id, k, w)];
+        } else {
+            b_small[(warp_id - 8) * 4 + 0][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 0, c_wg_x + 32 + thread_id, k, w)];
+            b_small[(warp_id - 8) * 4 + 1][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 1, c_wg_x + 32 + thread_id, k, w)];
+            b_small[(warp_id - 8) * 4 + 2][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 2, c_wg_x + 32 + thread_id, k, w)];
+            b_small[(warp_id - 8) * 4 + 3][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 3, c_wg_x + 32 + thread_id, k, w)];
         }
+
+        __syncthreads();
+        for (uint j = 0; j < 2; j++) {
+            // Грузим А-шку в фрагмент
+            wmma::load_matrix_sync(a_frag, &a_small[warp_id_y * 16][16 * j], LDA);
+
+            // Грузим B-шку в фрагмент
+            wmma::load_matrix_sync(b_frag, &b_small[16 * j][16 * warp_id_x], LDB); // 16x16 at (t, warp_x*16)
+
+
+            wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+        }
+        __syncthreads();
     }
 
-    // Load in the current value of c, scale it by beta, and add this our result scaled by alpha
-    const uint cRow = warp_y * WMMA_M;
-    const uint cCol = warp_x * WMMA_N;
-
-    if (cRow < h && cCol < w) {
-        // Store the output
-        wmma::store_matrix_sync(c + cCol + cRow * ldc, c_frag, ldc, wmma::mem_row_major);
-    }
+    // Store the output
+    wmma::store_matrix_sync(c + c_warp_x + c_warp_y * ldc, c_frag, ldc, wmma::mem_row_major);
 }
 
 namespace cuda {
@@ -105,8 +150,8 @@ void matrix_multiply_wmma(
 
     // blockDim.x must be a multple of warpSize
     // 128x4 means we have 16 warps and a block computes a 64x64 output tile
-    blockDim.x = 128;
-    blockDim.y = 4;
+    blockDim.x = WG_SIZE_X;
+    blockDim.y = WG_SIZE_Y;
 
     gridDim.x = (w + (WMMA_M * blockDim.x / 32 - 1)) / (WMMA_M * blockDim.x / 32);
     gridDim.y = (h + WMMA_N * blockDim.y - 1) / (WMMA_N * blockDim.y);

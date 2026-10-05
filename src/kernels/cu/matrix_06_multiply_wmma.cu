@@ -30,7 +30,7 @@ const int PAD = 8;
 const int LDA = 32 + PAD;
 const int LDB = 64 + PAD;
 
-__device__ uint idx3(uint y, uint x, uint h, uint w) {
+__device__ uint idx4(uint y, uint x, uint h, uint w) {
     return y * w + x;
 }
 
@@ -87,22 +87,22 @@ __global__ void matrix_multiply_wmma2(
         // Грузим А-шку в smem
         // У нас 16 варпов и 64 строки по 32 к загрузке
         // Каждому достается 4
-        a_small[warp_id * 4 + 0][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 0, i + thread_id, h, k)];
-        a_small[warp_id * 4 + 1][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 1, i + thread_id, h, k)];
-        a_small[warp_id * 4 + 2][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 2, i + thread_id, h, k)];
-        a_small[warp_id * 4 + 3][thread_id] = a[idx3(c_wg_y + warp_id * 4 + 3, i + thread_id, h, k)];
+        a_small[warp_id * 4 + 0][thread_id] = a[idx4(c_wg_y + warp_id * 4 + 0, i + thread_id, h, k)];
+        a_small[warp_id * 4 + 1][thread_id] = a[idx4(c_wg_y + warp_id * 4 + 1, i + thread_id, h, k)];
+        a_small[warp_id * 4 + 2][thread_id] = a[idx4(c_wg_y + warp_id * 4 + 2, i + thread_id, h, k)];
+        a_small[warp_id * 4 + 3][thread_id] = a[idx4(c_wg_y + warp_id * 4 + 3, i + thread_id, h, k)];
 
         // Грузим B-шку в smem
         if (warp_id < 8) {
-            b_small[(warp_id - 0) * 4 + 0][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 0, c_wg_x +  0 + thread_id, k, w)];
-            b_small[(warp_id - 0) * 4 + 1][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 1, c_wg_x +  0 + thread_id, k, w)];
-            b_small[(warp_id - 0) * 4 + 2][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 2, c_wg_x +  0 + thread_id, k, w)];
-            b_small[(warp_id - 0) * 4 + 3][ 0 + thread_id] = b[idx3(i + (warp_id - 0) * 4 + 3, c_wg_x +  0 + thread_id, k, w)];
+            b_small[(warp_id - 0) * 4 + 0][ 0 + thread_id] = b[idx4(i + (warp_id - 0) * 4 + 0, c_wg_x +  0 + thread_id, k, w)];
+            b_small[(warp_id - 0) * 4 + 1][ 0 + thread_id] = b[idx4(i + (warp_id - 0) * 4 + 1, c_wg_x +  0 + thread_id, k, w)];
+            b_small[(warp_id - 0) * 4 + 2][ 0 + thread_id] = b[idx4(i + (warp_id - 0) * 4 + 2, c_wg_x +  0 + thread_id, k, w)];
+            b_small[(warp_id - 0) * 4 + 3][ 0 + thread_id] = b[idx4(i + (warp_id - 0) * 4 + 3, c_wg_x +  0 + thread_id, k, w)];
         } else {
-            b_small[(warp_id - 8) * 4 + 0][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 0, c_wg_x + 32 + thread_id, k, w)];
-            b_small[(warp_id - 8) * 4 + 1][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 1, c_wg_x + 32 + thread_id, k, w)];
-            b_small[(warp_id - 8) * 4 + 2][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 2, c_wg_x + 32 + thread_id, k, w)];
-            b_small[(warp_id - 8) * 4 + 3][32 + thread_id] = b[idx3(i + (warp_id - 8) * 4 + 3, c_wg_x + 32 + thread_id, k, w)];
+            b_small[(warp_id - 8) * 4 + 0][32 + thread_id] = b[idx4(i + (warp_id - 8) * 4 + 0, c_wg_x + 32 + thread_id, k, w)];
+            b_small[(warp_id - 8) * 4 + 1][32 + thread_id] = b[idx4(i + (warp_id - 8) * 4 + 1, c_wg_x + 32 + thread_id, k, w)];
+            b_small[(warp_id - 8) * 4 + 2][32 + thread_id] = b[idx4(i + (warp_id - 8) * 4 + 2, c_wg_x + 32 + thread_id, k, w)];
+            b_small[(warp_id - 8) * 4 + 3][32 + thread_id] = b[idx4(i + (warp_id - 8) * 4 + 3, c_wg_x + 32 + thread_id, k, w)];
         }
 
         __syncthreads();
