@@ -20,15 +20,13 @@ const int WMMA_K = 16;
 const int WARP_SIZE_X = 32;
 const int WARP_SIZE_Y = 1;
 const int WG_SIZE_WARPS_X = 4;
-const int WG_SIZE_WARPS_Y = 4;
-const int WG_SIZE_X = WG_SIZE_WARPS_X * WARP_SIZE_X;
-const int WG_SIZE_Y = WG_SIZE_WARPS_Y * WARP_SIZE_Y;
+const int WG_SIZE_WARPS_Y = 8;
 const int TILE_H = WMMA_N * WG_SIZE_WARPS_Y;
 const int TILE_W = WMMA_M * WG_SIZE_WARPS_X;
-const int MUL = 4;
+const int MUL = 2;
 const int PAD = 8;
 const int LDA = (32 * MUL) + PAD;
-const int LDB = 64 + PAD;
+const int LDB = (WG_SIZE_WARPS_X * WMMA_M) + PAD;
 
 __device__ uint idx3(uint y, uint x, uint h, uint w) {
     return y * w + x;
@@ -49,7 +47,7 @@ __global__ void matrix_multiply_wmma(
                        unsigned int h,
                        unsigned int k)
 {
-    __shared__ half a_small[64][LDA];
+    __shared__ half a_small[(WG_SIZE_WARPS_Y * WMMA_N)][LDA];
     __shared__ half b_small[(32 * MUL)][LDB];
 
     // Leading dimensions. Packed with no transpositions.
@@ -67,8 +65,8 @@ __global__ void matrix_multiply_wmma(
     const uint thread_id = threadIdx.x % WARP_SIZE_X; // Номер треда в варпе
 
     curassert(warp_id_x < 4, 64368844);
-    curassert(warp_id_y < 4, 54398895);
-    curassert(warp_id < 16,  80657575);
+    curassert(warp_id_y < 8, 54398895);
+    curassert(warp_id < 32,  80657575);
     curassert(thread_id < 32, 74339188);
 
     const uint c_warp_y = warp_y * WMMA_N; // Базовый адрес C-шки для варпа
@@ -102,18 +100,14 @@ __global__ void matrix_multiply_wmma(
             a_small[warp_id * 4 + 3][shift + thread_id] = a[idx3(a_wg_y + warp_id * 4 + 3, a_wg_x + thread_id, h, k)];
 
             // Грузим B-шку в smem
-            if (warp_id < 8) {
-                curassert(shift + (warp_id - 0) * 4 + 3 < 32 * MUL, 54398895);
-                b_small[shift + (warp_id - 0) * 4 + 0][ 0 + thread_id] = b[idx3(b_wg_y + (warp_id - 0) * 4 + 0, b_wg_x +  0 + thread_id, k, w)];
-                b_small[shift + (warp_id - 0) * 4 + 1][ 0 + thread_id] = b[idx3(b_wg_y + (warp_id - 0) * 4 + 1, b_wg_x +  0 + thread_id, k, w)];
-                b_small[shift + (warp_id - 0) * 4 + 2][ 0 + thread_id] = b[idx3(b_wg_y + (warp_id - 0) * 4 + 2, b_wg_x +  0 + thread_id, k, w)];
-                b_small[shift + (warp_id - 0) * 4 + 3][ 0 + thread_id] = b[idx3(b_wg_y + (warp_id - 0) * 4 + 3, b_wg_x +  0 + thread_id, k, w)];
+            if (warp_id < 16) {
+                curassert(shift + (warp_id - 0) * 2 + 1 < 32 * MUL, 54398895);
+                b_small[shift + (warp_id -  0) * 2 + 0][ 0 + thread_id] = b[idx3(b_wg_y + (warp_id -  0) * 2 + 0, b_wg_x +  0 + thread_id, k, w)];
+                b_small[shift + (warp_id -  0) * 2 + 1][ 0 + thread_id] = b[idx3(b_wg_y + (warp_id -  0) * 2 + 1, b_wg_x +  0 + thread_id, k, w)];
             } else {
-                curassert(shift + (warp_id - 8) * 4 + 3 < 32 * MUL, 87641059);
-                b_small[shift + (warp_id - 8) * 4 + 0][32 + thread_id] = b[idx3(b_wg_y + (warp_id - 8) * 4 + 0, b_wg_x + 32 + thread_id, k, w)];
-                b_small[shift + (warp_id - 8) * 4 + 1][32 + thread_id] = b[idx3(b_wg_y + (warp_id - 8) * 4 + 1, b_wg_x + 32 + thread_id, k, w)];
-                b_small[shift + (warp_id - 8) * 4 + 2][32 + thread_id] = b[idx3(b_wg_y + (warp_id - 8) * 4 + 2, b_wg_x + 32 + thread_id, k, w)];
-                b_small[shift + (warp_id - 8) * 4 + 3][32 + thread_id] = b[idx3(b_wg_y + (warp_id - 8) * 4 + 3, b_wg_x + 32 + thread_id, k, w)];
+                curassert(shift + (warp_id - 16) * 2 + 1 < 32 * MUL, 87641059);
+                b_small[shift + (warp_id - 16) * 2 + 0][32 + thread_id] = b[idx3(b_wg_y + (warp_id - 16) * 2 + 0, b_wg_x + 32 + thread_id, k, w)];
+                b_small[shift + (warp_id - 16) * 2 + 1][32 + thread_id] = b[idx3(b_wg_y + (warp_id - 16) * 2 + 1, b_wg_x + 32 + thread_id, k, w)];
             }
         }
 
@@ -162,8 +156,8 @@ void matrix_multiply_wmma(
 
     // blockDim.x must be a multple of warpSize
     // 128x4 means we have 16 warps and a block computes a 64x64 output tile
-    blockDim.x = WG_SIZE_X;
-    blockDim.y = WG_SIZE_Y;
+    blockDim.x = WG_SIZE_WARPS_X * WARP_SIZE_X;
+    blockDim.y = WG_SIZE_WARPS_Y * WARP_SIZE_Y;
 
     gridDim.x = (w + (WMMA_M * blockDim.x / 32 - 1)) / (WMMA_M * blockDim.x / 32);
     gridDim.y = (h + WMMA_N * blockDim.y - 1) / (WMMA_N * blockDim.y);
