@@ -50,6 +50,23 @@ void run(int argc, char** argv)
         rassert(total_sum < std::numeric_limits<unsigned int>::max(), 5462345234231, total_sum, as[i], i); // ensure no overflow
     }
 
+    std::vector<unsigned int> cpu_prefix_sum(n);
+    {
+        std::cout << "prefix sum on CPU..." << std::endl;
+        timer t;
+        unsigned int sum = 0;
+        for (size_t i = 0; i < n; ++i) {
+            sum += as[i];
+            cpu_prefix_sum[i] = sum;
+        }
+        double elapsed = t.elapsed();
+        double memory_size_gb = sizeof(unsigned int) * 2.0 * n / 1024.0 / 1024.0 / 1024.0;
+        std::cout << "CPU prefix sum finished in " << elapsed << " sec" << std::endl;
+        std::cout << "CPU prefix sum effective RAM bandwidth: "
+                  << memory_size_gb / elapsed << " GB/s ("
+                  << n / 1e6 / elapsed << " uint millions/s)" << std::endl;
+    }
+
     // Аллоцируем буферы в VRAM
     gpu::gpu_mem_32u input_gpu(n), buffer1_pow2_sum_gpu(n), buffer2_pow2_sum_gpu(n), prefix_sum_accum_gpu(n);
 
@@ -91,16 +108,16 @@ void run(int argc, char** argv)
 
     // Вычисляем достигнутую эффективную пропускную способность видеопамяти (из соображений что мы отработали в один проход - считали массив и сохранили префиксные суммы)
     double memory_size_gb = sizeof(unsigned int) * 2 * n / 1024.0 / 1024.0 / 1024.0;
-    std::cout << "prefix sum median effective VRAM bandwidth: " << memory_size_gb / stats::median(times) << " GB/s" << std::endl;
+    std::cout << "GPU prefix sum median effective VRAM bandwidth: "
+              << memory_size_gb / stats::median(times) << " GB/s ("
+              << n / 1e6 / stats::median(times) << " uint millions/s)" << std::endl;
 
     // Считываем результат по PCI-E шине: GPU VRAM -> CPU RAM
     std::vector<unsigned int> gpu_prefix_sum = prefix_sum_accum_gpu.readVector();
 
     // Сверяем результат
-    size_t cpu_sum = 0;
     for (size_t i = 0; i < n; ++i) {
-        cpu_sum += as[i];
-        rassert(cpu_sum == gpu_prefix_sum[i], 566324523452323, cpu_sum, gpu_prefix_sum[i], i);
+        rassert(cpu_prefix_sum[i] == gpu_prefix_sum[i], 566324523452323, cpu_prefix_sum[i], gpu_prefix_sum[i], i);
     }
 
     // Проверяем что входные данные остались нетронуты (ведь мы их переиспользуем от итерации к итерации)
