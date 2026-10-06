@@ -59,10 +59,9 @@ set(LIBRARIES
 # Обратите внимание что это происходит на этапе компиляции, кроме того эта команда делает так чтобы файл src/kernels/vk/aplusb.h был перечислен среди HEADERS для компиляции при вызове add_executable
 set(OPENCL_SOURCES
         src/kernels/cl/aplusb.cl
-        src/kernels/cl/matrix_01_transpose_naive.cl
-        src/kernels/cl/matrix_02_transpose_coalesced_via_local_memory.cl
-        src/kernels/cl/matrix_03_multiply_naive.cl
-        src/kernels/cl/matrix_04_multiply_via_local_memory.cl)
+        src/kernels/cl/fill_buffer_with_zeros.cl
+        src/kernels/cl/prefix_sum_01_reduction.cl
+        src/kernels/cl/prefix_sum_02_prefix_accumulation.cl)
 
 set(OPENCL_INCLUDES src/kernels/defines.h src/kernels/cl/helpers/rassert.cl)
 set(OPENCL_DEFINES)
@@ -79,11 +78,9 @@ endforeach()
 # Обратите внимание что это происходит на этапе компиляции, кроме того эта команда делает так чтобы файл src/kernels/vk/aplusb_comp.h был перечислен среди HEADERS для компиляции при вызове add_executable
 set(VULKAN_SOURCES
         src/kernels/vk/aplusb.comp
-        src/kernels/vk/matrix_01_transpose_naive.comp
-        src/kernels/vk/matrix_02_transpose_coalesced_via_local_memory.comp
-        src/kernels/vk/matrix_03_multiply_naive.comp
-        src/kernels/vk/matrix_04_multiply_via_local_memory.comp
-        src/kernels/vk/matrix_05_multiply_cooperative_matrix.comp)
+        src/kernels/vk/fill_buffer_with_zeros.comp
+        src/kernels/vk/prefix_sum_01_reduction.comp
+        src/kernels/vk/prefix_sum_02_prefix_accumulation.comp)
 
 set(VULKAN_DEFINES)
 foreach(VK_FILE IN LISTS VULKAN_SOURCES)
@@ -100,11 +97,9 @@ if (GPU_CUDA_SUPPORT)
     # Вероятно вам стоит выставить в CMake options: -DCMAKE_CUDA_ARCHITECTURES=75 -DCMAKE_CUDA_FLAGS=-lineinfo (первое - чтобы включить поддержку WMMA, второе - чтобы compute-sanitizer и профилировщик знали номера строк кернела)
     set(CUDA_SOURCES
             src/kernels/cu/aplusb.cu
-            src/kernels/cu/matrix_01_transpose_naive.cu
-            src/kernels/cu/matrix_02_transpose_coalesced_via_local_memory.cu
-            src/kernels/cu/matrix_03_multiply_naive.cu
-            src/kernels/cu/matrix_04_multiply_via_local_memory.cu
-            src/kernels/cu/matrix_05_multiply_wmma.cu)
+            src/kernels/cu/fill_buffer_with_zeros.cu
+            src/kernels/cu/prefix_sum_01_reduction.cu
+            src/kernels/cu/prefix_sum_02_prefix_accumulation.cu)
 
     add_definitions(-DCUDA_SUPPORT)
     add_library(${PROJECT_NAME}_core STATIC ${SOURCES} ${CUDA_SOURCES} ${HEADERS})
@@ -115,16 +110,13 @@ else ()
     target_link_libraries(${PROJECT_NAME}_core ${LIBRARIES})
 endif ()
 
-add_executable(main_aplusb           src/main_aplusb.cpp)
-add_executable(main_matrix_transpose src/main_01_matrix_transpose.cpp)
-add_executable(main_matrix_multiply  src/main_02_matrix_multiply.cpp)
+add_executable(main_aplusb     src/main_aplusb.cpp)
+add_executable(main_prefix_sum src/main_prefix_sum.cpp)
 
-target_link_libraries(main_aplusb           ${PROJECT_NAME}_core)
-target_link_libraries(main_matrix_transpose ${PROJECT_NAME}_core)
-target_link_libraries(main_matrix_multiply  ${PROJECT_NAME}_core)
+target_link_libraries(main_aplusb     ${PROJECT_NAME}_core)
+target_link_libraries(main_prefix_sum ${PROJECT_NAME}_core)
 
 if (GPU_CUDA_SUPPORT)
-    target_include_directories(main_aplusb           PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-    target_include_directories(main_matrix_transpose PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-    target_include_directories(main_matrix_multiply  PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    target_include_directories(main_aplusb     PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    target_include_directories(main_prefix_sum PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
 endif ()

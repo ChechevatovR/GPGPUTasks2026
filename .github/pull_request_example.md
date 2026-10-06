@@ -8,10 +8,7 @@
 <details><summary>Локальный вывод</summary><p>
 
 <pre>
-$ ./main_matrix_transpose
-...
-
-$ ./main_matrix_multiply
+$ ./main_prefix_sum
 ...
 </pre>
 
@@ -26,10 +23,7 @@ $ ./main_matrix_multiply
 <details><summary>Вывод Github CI</summary><p>
 
 <pre>
-$ ./main_matrix_transpose
-...
-
-$ ./main_matrix_multiply
+$ ./main_prefix_sum
 ...
 </pre>
 

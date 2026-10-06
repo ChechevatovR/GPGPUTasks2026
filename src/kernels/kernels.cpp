@@ -1,17 +1,14 @@
 #include "kernels.h"
 
 #include "cl/generated_kernels/aplusb.h"
-#include "cl/generated_kernels/matrix_01_transpose_naive.h"
-#include "cl/generated_kernels/matrix_02_transpose_coalesced_via_local_memory.h"
-#include "cl/generated_kernels/matrix_03_multiply_naive.h"
-#include "cl/generated_kernels/matrix_04_multiply_via_local_memory.h"
+#include "cl/generated_kernels/fill_buffer_with_zeros.h"
+#include "cl/generated_kernels/prefix_sum_01_reduction.h"
+#include "cl/generated_kernels/prefix_sum_02_prefix_accumulation.h"
 
 #include "vk/generated_kernels/aplusb_comp.h"
-#include "vk/generated_kernels/matrix_01_transpose_naive_comp.h"
-#include "vk/generated_kernels/matrix_02_transpose_coalesced_via_local_memory_comp.h"
-#include "vk/generated_kernels/matrix_03_multiply_naive_comp.h"
-#include "vk/generated_kernels/matrix_04_multiply_via_local_memory_comp.h"
-#include "vk/generated_kernels/matrix_05_multiply_cooperative_matrix_comp.h"
+#include "vk/generated_kernels/fill_buffer_with_zeros_comp.h"
+#include "vk/generated_kernels/prefix_sum_01_reduction_comp.h"
+#include "vk/generated_kernels/prefix_sum_02_prefix_accumulation_comp.h"
 
 #ifndef CUDA_SUPPORT
 namespace cuda {
@@ -21,32 +18,20 @@ void aplusb(const gpu::WorkSize& workSize,
     // dummy implementation if CUDA_SUPPORT is disabled
     rassert(false, 54623523412413);
 }
-void matrix_transpose_naive(const gpu::WorkSize &workSize,
-            const gpu::gpu_mem_32f &matrix, gpu::gpu_mem_32f &transposed_matrix, unsigned int w, unsigned int h)
+void fill_buffer_with_zeros(const gpu::WorkSize &workSize,
+            gpu::gpu_mem_32u &buffer, unsigned int n)
 {
     // dummy implementation if CUDA_SUPPORT is disabled
     rassert(false, 54623523412413);
 }
-void matrix_transpose_coalesced_via_local_memory(const gpu::WorkSize &workSize,
-            const gpu::gpu_mem_32f &matrix, gpu::gpu_mem_32f &transposed_matrix, unsigned int w, unsigned int h)
+void prefix_sum_01_reduction(const gpu::WorkSize &workSize,
+            const gpu::gpu_mem_32u &pow2_sum, gpu::gpu_mem_32u &next_pow2_sum, unsigned int n)
 {
     // dummy implementation if CUDA_SUPPORT is disabled
-    rassert(false, 546237686412414);
+    rassert(false, 54623523412413);
 }
-void matrix_multiply_naive(const gpu::WorkSize &workSize,
-            const gpu::gpu_mem_32f &a, const gpu::gpu_mem_32f &b, gpu::gpu_mem_32f &c, unsigned int w, unsigned int h, unsigned int k)
-{
-    // dummy implementation if CUDA_SUPPORT is disabled
-    rassert(false, 546237686412414);
-}
-void matrix_multiply_via_local_memory(const gpu::WorkSize &workSize,
-            const gpu::gpu_mem_32f &a, const gpu::gpu_mem_32f &b, gpu::gpu_mem_32f &c, unsigned int w, unsigned int h, unsigned int k)
-{
-    // dummy implementation if CUDA_SUPPORT is disabled
-    rassert(false, 546237686412414);
-}
-void matrix_multiply_wmma(const gpu::WorkSize &workSize,
-            const gpu::gpu_mem_32f &a, const gpu::gpu_mem_32f &b, gpu::gpu_mem_32f &c, unsigned int w, unsigned int h, unsigned int k)
+void prefix_sum_02_prefix_accumulation(const gpu::WorkSize &workSize,
+            const gpu::gpu_mem_32u &pow2_sum, gpu::gpu_mem_32u &prefix_sum_accum, unsigned int n, unsigned int pow2)
 {
     // dummy implementation if CUDA_SUPPORT is disabled
     rassert(false, 546237686412414);
@@ -60,22 +45,19 @@ const ocl::ProgramBinaries& getAplusB()
     return opencl_binaries_aplusb;
 }
 
-const ProgramBinaries& getMatrix01TransposeNaive()
+const ProgramBinaries& getFillBufferWithZeros()
 {
-    return opencl_binaries_matrix_01_transpose_naive;
-}
-const ProgramBinaries& getMatrix02TransposeCoalescedViaLocalMemory()
-{
-    return opencl_binaries_matrix_02_transpose_coalesced_via_local_memory;
+    return opencl_binaries_fill_buffer_with_zeros;
 }
 
-const ProgramBinaries& getMatrix03MultiplyNaive()
+const ProgramBinaries& getPrefixSum01Reduction()
 {
-    return opencl_binaries_matrix_03_multiply_naive;
+    return opencl_binaries_prefix_sum_01_reduction;
 }
-const ProgramBinaries& getMatrix04MultiplyViaLocalMemory()
+
+const ProgramBinaries& getPrefixSum02PrefixAccumulation()
 {
-    return opencl_binaries_matrix_04_multiply_via_local_memory;
+    return opencl_binaries_prefix_sum_02_prefix_accumulation;
 }
 } // namespace ocl
 
@@ -85,25 +67,18 @@ const ProgramBinaries& getAplusB()
     return vulkan_binaries_aplusb_comp;
 }
 
-const ProgramBinaries& getMatrix01TransposeNaive()
+const ProgramBinaries& getFillBufferWithZeros()
 {
-    return vulkan_binaries_matrix_01_transpose_naive_comp;
-}
-const ProgramBinaries& getMatrix02TransposeCoalescedViaLocalMemory()
-{
-    return vulkan_binaries_matrix_02_transpose_coalesced_via_local_memory_comp;
+    return vulkan_binaries_fill_buffer_with_zeros_comp;
 }
 
-const ProgramBinaries& getMatrix03MultiplyNaive()
+const ProgramBinaries& getPrefixSum01Reduction()
 {
-    return vulkan_binaries_matrix_03_multiply_naive_comp;
+    return vulkan_binaries_prefix_sum_01_reduction_comp;
 }
-const ProgramBinaries& getMatrix04MultiplyViaLocalMemory()
+
+const ProgramBinaries& getPrefixSum02PrefixAccumulation()
 {
-    return vulkan_binaries_matrix_04_multiply_via_local_memory_comp;
-}
-const ProgramBinaries& getMatrix05MultiplyCooperativeMatrix()
-{
-    return vulkan_binaries_matrix_05_multiply_cooperative_matrix_comp;
+    return vulkan_binaries_prefix_sum_02_prefix_accumulation_comp;
 }
 } // namespace avk2
