@@ -50,7 +50,8 @@ __global__ void fp32_to_fp16(float *in, half *out, uint n) {
     }
 }
 
-__global__ void cublas_matrix_multiply_wmma(
+__launch_bounds__(512, 3)
+__global__ void cutlass_matrix_multiply_wmma(
                        const half* a, // rows=h x cols=k
                        const half* b, // rows=k x cols=w
                              float* c, // rows=h x cols=w
@@ -148,7 +149,7 @@ void matrix_multiply_wmma(
 
     gridDim.x = (w + (WMMA_M * blockDim.x / 32 - 1)) / (WMMA_M * blockDim.x / 32);
     gridDim.y = (h + WMMA_N * blockDim.y - 1) / (WMMA_N * blockDim.y);
-    ::cublas_matrix_multiply_wmma<<<gridDim, blockDim, 0, stream>>>(at.cuptr(), bt.cuptr(), c.cuptr(), w, h, k);
+    ::cutlass_matrix_multiply_wmma<<<gridDim, blockDim, 0, stream>>>(at.cuptr(), bt.cuptr(), c.cuptr(), w, h, k);
     CUDA_CHECK_KERNEL(stream);
 }
 } // namespace cuda
