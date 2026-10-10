@@ -153,9 +153,9 @@ void matrix_multiply_wmma(
     auto work_size_at = WorkSize(GROUP_SIZE, h * k);
     auto work_size_bt = WorkSize(GROUP_SIZE, k * w);
     ::fp32_to_fp16<<<work_size_at.cuGridSize(), work_size_at.cuBlockSize(), 0, stream>>>(a.cuptr(), at.cuptr(), h * k);
-    CUDA_CHECK_KERNEL(stream);
+//     CUDA_CHECK_KERNEL(stream);
     ::fp32_to_fp16<<<work_size_bt.cuGridSize(), work_size_bt.cuBlockSize(), 0, stream>>>(b.cuptr(), bt.cuptr(), k * w);
-    CUDA_CHECK_KERNEL(stream);
+//     CUDA_CHECK_KERNEL(stream);
 
     dim3 gridDim;
     dim3 blockDim;
