@@ -59,7 +59,7 @@ set(LIBRARIES
 # Обратите внимание что это происходит на этапе компиляции, кроме того эта команда делает так чтобы файл src/kernels/vk/aplusb.h был перечислен среди HEADERS для компиляции при вызове add_executable
 set(OPENCL_SOURCES
         src/kernels/cl/aplusb.cl
-        src/kernels/cl/merge_sort.cl)
+        src/kernels/cl/sparse_csr_matrix_vector_multiplication.cl)
 
 set(OPENCL_INCLUDES src/kernels/defines.h src/kernels/cl/helpers/rassert.cl)
 set(OPENCL_DEFINES)
@@ -76,7 +76,7 @@ endforeach()
 # Обратите внимание что это происходит на этапе компиляции, кроме того эта команда делает так чтобы файл src/kernels/vk/aplusb_comp.h был перечислен среди HEADERS для компиляции при вызове add_executable
 set(VULKAN_SOURCES
         src/kernels/vk/aplusb.comp
-        src/kernels/vk/merge_sort.comp)
+        src/kernels/vk/sparse_csr_matrix_vector_multiplication.comp)
 
 set(VULKAN_DEFINES)
 foreach(VK_FILE IN LISTS VULKAN_SOURCES)
@@ -93,7 +93,7 @@ if (GPU_CUDA_SUPPORT)
     # Вероятно вам стоит выставить в CMake options: -DCMAKE_CUDA_ARCHITECTURES=75 -DCMAKE_CUDA_FLAGS=-lineinfo (первое - чтобы включить поддержку WMMA, второе - чтобы compute-sanitizer и профилировщик знали номера строк кернела)
     set(CUDA_SOURCES
             src/kernels/cu/aplusb.cu
-            src/kernels/cu/merge_sort.cu)
+            src/kernels/cu/sparse_csr_matrix_vector_multiplication.cu)
 
     add_definitions(-DCUDA_SUPPORT)
     add_library(${PROJECT_NAME}_core STATIC ${SOURCES} ${CUDA_SOURCES} ${HEADERS})
@@ -104,13 +104,13 @@ else ()
     target_link_libraries(${PROJECT_NAME}_core ${LIBRARIES})
 endif ()
 
-add_executable(main_aplusb     src/main_aplusb.cpp)
-add_executable(main_merge_sort src/main_merge_sort.cpp)
+add_executable(main_aplusb                 src/main_aplusb.cpp)
+add_executable(main_sparse_matrix_multiply src/main_csr_spmv.cpp)
 
-target_link_libraries(main_aplusb     ${PROJECT_NAME}_core)
-target_link_libraries(main_merge_sort ${PROJECT_NAME}_core)
+target_link_libraries(main_aplusb                 ${PROJECT_NAME}_core)
+target_link_libraries(main_sparse_matrix_multiply ${PROJECT_NAME}_core)
 
 if (GPU_CUDA_SUPPORT)
-    target_include_directories(main_aplusb     PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-    target_include_directories(main_merge_sort PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    target_include_directories(main_aplusb                 PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    target_include_directories(main_sparse_matrix_multiply PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
 endif ()

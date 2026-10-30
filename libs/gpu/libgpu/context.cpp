@@ -66,6 +66,7 @@ Context::Data::~Data()
 	if (vk_engine) {
 		vk_engine->clearKernels();
 		vk_engine->clearStagingBuffers();
+		vk_engine->clearFences();
 	}
 
 	if (data_current_ != this) {

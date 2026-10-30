@@ -6,12 +6,7 @@
 #include "../defines.h"
 
 __attribute__((reqd_work_group_size(1, 1, 1)))
-__kernel void merge_sort(
-    __global const uint* input_data,
-    __global       uint* output_data,
-                   int  sorted_k,
-                   int  n)
+__kernel void sparse_csr_matrix_vector_multiplication() // TODO input/output buffers
 {
-    const unsigned int i = get_global_id(0);
     // TODO
 }

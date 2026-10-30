@@ -7,7 +7,7 @@
 <details><summary>Локальный вывод</summary><p>
 
 <pre>
-$ ./main_merge_sort
+$ ./main_sparse_matrix_multiply
 ...
 </pre>
 
