@@ -119,6 +119,8 @@ void run(int argc, char** argv)
         {1, 128},
         {32, 128},
     };
+    double cpu_bandwidth_sum = 0.0, gpu_bandwidth_sum = 0.0;
+    double cpu_throughput_sum = 0.0, gpu_throughput_sum = 0.0;
     for (auto [min_nnz_per_row, max_nnz_per_col]: evaluated_min_max_nnz_per_row) {
         std::cout << "____________________________________________________________________________________________" << std::endl;
         const auto [csr_row_offsets, csr_columns, csr_values] = generate_csr_matrix(nrows, ncols, min_nnz_per_row, max_nnz_per_col, max_value);
@@ -182,7 +184,8 @@ void run(int argc, char** argv)
         std::cout << "GPU SpMV (sparse matrix-vector multiplication) times (in seconds) - " << stats::valuesStatsLine(times) << std::endl;
 
         // Вычисляем достигнутую эффективную пропускную способность видеопамяти (из соображений что мы отработали в один проход - считали массив и сохранили его переупорядоченным)
-        std::cout << "GPU SpMV median effective VRAM bandwidth: " << memory_size_gb / stats::median(times) << " GB/s (" << nnz / 1e6 / stats::median(times) << " uint millions/s)" << std::endl;
+        double gpu_elapsed = stats::median(times);
+        std::cout << "GPU SpMV median effective VRAM bandwidth: " << memory_size_gb / gpu_elapsed << " GB/s (" << nnz / 1e6 / gpu_elapsed << " uint millions/s)" << std::endl;
 
         // Считываем результат по PCI-E шине: GPU VRAM -> CPU RAM
         std::vector<unsigned int> gpu_results = output_vector_values_gpu.readVector();
@@ -193,7 +196,22 @@ void run(int argc, char** argv)
         for (size_t i = 0; i < cpu_results.size(); ++i) {
             rassert(cpu_results[i] == gpu_results[i], 566324523452323, cpu_results[i], gpu_results[i], i);
         }
+
+        cpu_bandwidth_sum += memory_size_gb / elapsed;
+        gpu_bandwidth_sum += memory_size_gb / gpu_elapsed;
+        cpu_throughput_sum += nnz / 1e6 / elapsed;
+        gpu_throughput_sum += nnz / 1e6 / gpu_elapsed;
     }
+
+    // Среднее арифметическое производительностей по наборам матриц с одинаковым весом каждого набора.
+    const size_t count = evaluated_min_max_nnz_per_row.size();
+    std::cout << "____________________________________________________________________________________________" << std::endl;
+    std::cout << "Average SpMV performance across " << count << " matrix configurations:" << std::endl;
+    std::cout << "CPU mean effective RAM bandwidth: " << cpu_bandwidth_sum / count << " GB/s ("
+              << cpu_throughput_sum / count << " uint millions/s)" << std::endl;
+    std::cout << "GPU mean effective VRAM bandwidth (based on per-configuration median times): "
+              << gpu_bandwidth_sum / count << " GB/s ("
+              << gpu_throughput_sum / count << " uint millions/s)" << std::endl;
 }
 
 int main(int argc, char** argv)
